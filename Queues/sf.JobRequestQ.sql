@@ -1,0 +1,13 @@
+CREATE QUEUE [sf].[JobRequestQ]
+	WITH
+		STATUS = ON,
+		RETENTION = OFF,
+		ACTIVATION (
+			STATUS = ON,
+			PROCEDURE_NAME = [sf].[pJob#End],
+			MAX_QUEUE_READERS = 1,
+			EXECUTE AS OWNER
+			),
+		POISON_MESSAGE_HANDLING (STATUS = ON)
+ON [ApplicationRowData]
+GO

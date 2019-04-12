@@ -1,0 +1,4 @@
+CREATE USER [devV6]
+	FOR LOGIN [devV6]
+	WITH DEFAULT_SCHEMA = [dbo]
+GO

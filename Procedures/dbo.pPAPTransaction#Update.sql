@@ -1,0 +1,583 @@
+SET ANSI_NULLS ON
+SET QUOTED_IDENTIFIER ON
+GO
+CREATE PROCEDURE [dbo].[pPAPTransaction#Update]
+	 @PAPTransactionSID               int               = null -- required! id of row to update - must be set in custom logic if not passed
+	,@PAPBatchSID                     int               = null -- table column values to update:
+	,@PAPSubscriptionSID              int               = null
+	,@AccountNo                       varchar(15)       = null
+	,@InstitutionNo                   varchar(3)        = null
+	,@TransitNo                       varchar(5)        = null
+	,@WithdrawalAmount                decimal(11,2)     = null
+	,@IsRejected                      bit               = null
+	,@PaymentSID                      int               = null
+	,@UserDefinedColumns              xml               = null
+	,@PAPTransactionXID               varchar(150)      = null
+	,@LegacyKey                       nvarchar(50)      = null
+	,@UpdateUser                      nvarchar(75)      = null -- set to current application user unless "SystemUser" passed
+	,@RowStamp                        timestamp         = null -- row time stamp - pass for preemptive check for overwrites
+	,@IsReselected                    tinyint           = 0    -- when 1 all columns in entity view are returned, 2 PK only, 0 none
+	,@IsNullApplied                   bit               = 0    -- when 1 null parameters overwrite corresponding columns with null
+	,@zContext                        xml               = null -- other values defining context for the update (if any)
+	,@BatchID                         varchar(12)       = null -- not a base table column
+	,@BatchSequence                   int               = null -- not a base table column
+	,@WithdrawalDate                  date              = null -- not a base table column
+	,@LockedTime                      datetimeoffset(7) = null -- not a base table column
+	,@ProcessedTime                   datetimeoffset(7) = null -- not a base table column
+	,@PAPBatchRowGUID                 uniqueidentifier  = null -- not a base table column
+	,@PAPSubscriptionPersonSID        int               = null -- not a base table column
+	,@PAPSubscriptionInstitutionNo    varchar(3)        = null -- not a base table column
+	,@PAPSubscriptionTransitNo        varchar(5)        = null -- not a base table column
+	,@PAPSubscriptionAccountNo        varchar(15)       = null -- not a base table column
+	,@PAPSubscriptionWithdrawalAmount decimal(11,2)     = null -- not a base table column
+	,@EffectiveTime                   datetime          = null -- not a base table column
+	,@PAPSubscriptionCancelledTime    datetime          = null -- not a base table column
+	,@PAPSubscriptionRowGUID          uniqueidentifier  = null -- not a base table column
+	,@PaymentPersonSID                int               = null -- not a base table column
+	,@PaymentTypeSID                  int               = null -- not a base table column
+	,@PaymentStatusSID                int               = null -- not a base table column
+	,@GLAccountCode                   varchar(50)       = null -- not a base table column
+	,@GLPostingDate                   date              = null -- not a base table column
+	,@DepositDate                     date              = null -- not a base table column
+	,@AmountPaid                      decimal(11,2)     = null -- not a base table column
+	,@Reference                       varchar(25)       = null -- not a base table column
+	,@NameOnCard                      nvarchar(150)     = null -- not a base table column
+	,@PaymentCard                     varchar(20)       = null -- not a base table column
+	,@TransactionID                   varchar(50)       = null -- not a base table column
+	,@LastResponseCode                varchar(50)       = null -- not a base table column
+	,@VerifiedTime                    datetime          = null -- not a base table column
+	,@PaymentCancelledTime            datetimeoffset(7) = null -- not a base table column
+	,@ReasonSID                       int               = null -- not a base table column
+	,@PaymentRowGUID                  uniqueidentifier  = null -- not a base table column
+	,@IsDeleteEnabled                 bit               = null -- not a base table column
+	,@RegistrantNo                    varchar(50)       = null -- not a base table column
+	,@DisplayName                     nvarchar(65)      = null -- not a base table column
+	,@TotalApplied                    decimal(11,2)     = null -- not a base table column
+as
+/*********************************************************************************************************************************
+Procedure : dbo.pPAPTransaction#Update
+Notice    : Copyright © 2019 Softworks Group Inc.
+Summary   : updates 1 row in the dbo.PAPTransaction table
+-----------------------------------------------------------------------------------------------------------------------------------
+Author    : Generated by DB Studio: pSprocGen | Designer: Tim Edlund
+Version   : March 2019
+-----------------------------------------------------------------------------------------------------------------------------------
+Comments
+--------
+This procedure is used to update the dbo.PAPTransaction table. The procedure requires a primary key to locate the record to update.
+Additional parameters are provided for all columns in the vPAPTransaction entity view, however, the base logic of the procedure
+updates the columns of the table only. Table-specific logic can be added through tagged sections (pre and post update) and a call
+to an extended procedure supports client-specific logic. Logic implemented within code tags (table-specific logic) is part of the
+base product and applies to all client configurations. Calls to the extended procedure occur immediately after the table-specific
+logic in both "pre-update" and "post-update" contexts.  A transaction is used to commit/rollback all changes as a logical unit.
+
+Client specific customizations must be implemented in the ext.pPAPTransaction procedure. The extended procedure is only called
+where it exists in the DB. The first parameter passed @Mode is set to either "update.pre" or "update.post" to provide context for
+the extended logic.
+
+The @zContext parameter is an additional construct available to support overrides where different results are produced based on
+content provided in the XML from the client tier. This parameter may contain multiple values.
+
+The "@IsReselected" parameter controls output and "@IsNullApplied" controls whether or not parameters with null values overwrite
+corresponding columns on the row.
+
+For client-tier calls using the Microsoft Entity Framework and RIA Services, the @IsReselected bit should be passed as 1 to
+force re-selection of table columns + extended view columns (the entity view).
+
+Values for parameters representing mandatory columns must be provided unless @IsNullApplied is passed as 0. If @IsNullApplied = 1
+any parameter with a null value overwrites the corresponding column value with null.  @IsNullApplied defaults to 0 but should be
+passed as 1 when calling through the entity framework domain service since all columns are mapped to the procedure.
+
+If the @UpdateUser parameter is passed as the special value "SystemUser", then the system user established in sf.ConfigParam
+is applied. This option is useful for conversion and system generated updates the user would not recognize as having caused. Any
+other value provided for the parameter (including null) is overwritten with the current application user.
+
+The @RowStamp parameter should always be passed when calling from the user interface. The @RowStamp parameter is used to
+preemptively check for an overwrite.  The value should be passed as the RowStamp value from the row when it was last
+retrieved into the UI. If the RowStamp on the record changes from the value passed, this procedure will raise an exception and
+avoid the overwrite.  For calls from back-end procedures, the @RowStamp parameter can be left blank and it will default to the
+current time stamp on the record (avoiding the need to look up the value prior to calling.)
+
+Business rule compliance is checked through a table constraint which calls fPAPTransactionCheck to test all rules.
+
+-------------------------------------------------------------------------------------------------------------------------------- */
+
+begin
+	set nocount on
+
+	declare
+		 @errorNo                                      int = 0								-- 0 no error, <50000 SQL error, else business rule
+		,@tranCount                                    int = @@trancount			-- determines whether a wrapping transaction exists
+		,@sprocName                                    nvarchar(128) = object_name(@@procid)						-- name of currently executing procedure
+		,@xState                                       int										-- error state detected in catch block
+		,@errorText                                    nvarchar(4000)					-- message text (for business rule errors)
+		,@rowsAffected                                 int = 0								-- tracks rows impacted by the operation (error check)
+		,@recordSID                                    int										-- tracks primary key value for clearing current default
+		,@ON                                           bit = cast(1 as bit)		-- constant for bit comparison and assignments
+		,@OFF                                          bit = cast(0 as bit)		-- constant for bit comparison and assignments
+
+	begin try
+
+		-- use a transaction so that any additional updates implemented through the extended
+		-- procedure or through table-specific logic succeed or fail as a logical unit
+
+		if @tranCount = 0																											-- no outer transaction
+		begin
+			begin transaction
+		end
+		else																																	-- outer transaction so create save point
+		begin
+			save transaction @sprocName
+		end
+
+		-- check parameters
+
+		if @PAPTransactionSID is null
+		begin
+
+			exec sf.pMessage#Get
+				 @MessageSCD  	= 'BlankParameter'
+				,@MessageText 	= @errorText output
+				,@DefaultText 	= N'A parameter (%1) required by the database procedure was left blank.'
+				,@Arg1					= '@PAPTransactionSID'
+
+			raiserror(@errorText, 18, 1)
+		end
+
+		-- remove leading and trailing spaces from character type columns
+
+		set @AccountNo = ltrim(rtrim(@AccountNo))
+		set @InstitutionNo = ltrim(rtrim(@InstitutionNo))
+		set @TransitNo = ltrim(rtrim(@TransitNo))
+		set @PAPTransactionXID = ltrim(rtrim(@PAPTransactionXID))
+		set @LegacyKey = ltrim(rtrim(@LegacyKey))
+		set @UpdateUser = ltrim(rtrim(@UpdateUser))
+		set @BatchID = ltrim(rtrim(@BatchID))
+		set @PAPSubscriptionInstitutionNo = ltrim(rtrim(@PAPSubscriptionInstitutionNo))
+		set @PAPSubscriptionTransitNo = ltrim(rtrim(@PAPSubscriptionTransitNo))
+		set @PAPSubscriptionAccountNo = ltrim(rtrim(@PAPSubscriptionAccountNo))
+		set @GLAccountCode = ltrim(rtrim(@GLAccountCode))
+		set @Reference = ltrim(rtrim(@Reference))
+		set @NameOnCard = ltrim(rtrim(@NameOnCard))
+		set @PaymentCard = ltrim(rtrim(@PaymentCard))
+		set @TransactionID = ltrim(rtrim(@TransactionID))
+		set @LastResponseCode = ltrim(rtrim(@LastResponseCode))
+		set @RegistrantNo = ltrim(rtrim(@RegistrantNo))
+		set @DisplayName = ltrim(rtrim(@DisplayName))
+
+		-- set zero length strings to null to avoid storing them in the record
+
+		if len(@AccountNo) = 0 set @AccountNo = null
+		if len(@InstitutionNo) = 0 set @InstitutionNo = null
+		if len(@TransitNo) = 0 set @TransitNo = null
+		if len(@PAPTransactionXID) = 0 set @PAPTransactionXID = null
+		if len(@LegacyKey) = 0 set @LegacyKey = null
+		if len(@UpdateUser) = 0 set @UpdateUser = null
+		if len(@BatchID) = 0 set @BatchID = null
+		if len(@PAPSubscriptionInstitutionNo) = 0 set @PAPSubscriptionInstitutionNo = null
+		if len(@PAPSubscriptionTransitNo) = 0 set @PAPSubscriptionTransitNo = null
+		if len(@PAPSubscriptionAccountNo) = 0 set @PAPSubscriptionAccountNo = null
+		if len(@GLAccountCode) = 0 set @GLAccountCode = null
+		if len(@Reference) = 0 set @Reference = null
+		if len(@NameOnCard) = 0 set @NameOnCard = null
+		if len(@PaymentCard) = 0 set @PaymentCard = null
+		if len(@TransactionID) = 0 set @TransactionID = null
+		if len(@LastResponseCode) = 0 set @LastResponseCode = null
+		if len(@RegistrantNo) = 0 set @RegistrantNo = null
+		if len(@DisplayName) = 0 set @DisplayName = null
+
+		-- set the ID of the user
+
+		if isnull(@UpdateUser, 'x') = N'SystemUser' set @UpdateUser = left(sf.fConfigParam#Value('SystemUser'),75)-- override for "SystemUser"
+		if isnull(@UpdateUser, 'x') <> N'SystemUser' set @UpdateUser = sf.fApplicationUserSession#UserName()			-- application user - or DB user if no application session set
+
+		-- avoid overwriting with null parameter values (unless specified)
+		-- by retrieving existing values from the entity row for blank parameters
+
+		if @IsNullApplied = 0
+		begin
+
+			select
+				 @PAPBatchSID                     = isnull(@PAPBatchSID,papt.PAPBatchSID)
+				,@PAPSubscriptionSID              = isnull(@PAPSubscriptionSID,papt.PAPSubscriptionSID)
+				,@AccountNo                       = isnull(@AccountNo,papt.AccountNo)
+				,@InstitutionNo                   = isnull(@InstitutionNo,papt.InstitutionNo)
+				,@TransitNo                       = isnull(@TransitNo,papt.TransitNo)
+				,@WithdrawalAmount                = isnull(@WithdrawalAmount,papt.WithdrawalAmount)
+				,@IsRejected                      = isnull(@IsRejected,papt.IsRejected)
+				,@PaymentSID                      = isnull(@PaymentSID,papt.PaymentSID)
+				,@UserDefinedColumns              = isnull(@UserDefinedColumns,papt.UserDefinedColumns)
+				,@PAPTransactionXID               = isnull(@PAPTransactionXID,papt.PAPTransactionXID)
+				,@LegacyKey                       = isnull(@LegacyKey,papt.LegacyKey)
+				,@UpdateUser                      = isnull(@UpdateUser,papt.UpdateUser)
+				,@IsReselected                    = isnull(@IsReselected,papt.IsReselected)
+				,@IsNullApplied                   = isnull(@IsNullApplied,papt.IsNullApplied)
+				,@zContext                        = isnull(@zContext,papt.zContext)
+				,@BatchID                         = isnull(@BatchID,papt.BatchID)
+				,@BatchSequence                   = isnull(@BatchSequence,papt.BatchSequence)
+				,@WithdrawalDate                  = isnull(@WithdrawalDate,papt.WithdrawalDate)
+				,@LockedTime                      = isnull(@LockedTime,papt.LockedTime)
+				,@ProcessedTime                   = isnull(@ProcessedTime,papt.ProcessedTime)
+				,@PAPBatchRowGUID                 = isnull(@PAPBatchRowGUID,papt.PAPBatchRowGUID)
+				,@PAPSubscriptionPersonSID        = isnull(@PAPSubscriptionPersonSID,papt.PAPSubscriptionPersonSID)
+				,@PAPSubscriptionInstitutionNo    = isnull(@PAPSubscriptionInstitutionNo,papt.PAPSubscriptionInstitutionNo)
+				,@PAPSubscriptionTransitNo        = isnull(@PAPSubscriptionTransitNo,papt.PAPSubscriptionTransitNo)
+				,@PAPSubscriptionAccountNo        = isnull(@PAPSubscriptionAccountNo,papt.PAPSubscriptionAccountNo)
+				,@PAPSubscriptionWithdrawalAmount = isnull(@PAPSubscriptionWithdrawalAmount,papt.PAPSubscriptionWithdrawalAmount)
+				,@EffectiveTime                   = isnull(@EffectiveTime,papt.EffectiveTime)
+				,@PAPSubscriptionCancelledTime    = isnull(@PAPSubscriptionCancelledTime,papt.PAPSubscriptionCancelledTime)
+				,@PAPSubscriptionRowGUID          = isnull(@PAPSubscriptionRowGUID,papt.PAPSubscriptionRowGUID)
+				,@PaymentPersonSID                = isnull(@PaymentPersonSID,papt.PaymentPersonSID)
+				,@PaymentTypeSID                  = isnull(@PaymentTypeSID,papt.PaymentTypeSID)
+				,@PaymentStatusSID                = isnull(@PaymentStatusSID,papt.PaymentStatusSID)
+				,@GLAccountCode                   = isnull(@GLAccountCode,papt.GLAccountCode)
+				,@GLPostingDate                   = isnull(@GLPostingDate,papt.GLPostingDate)
+				,@DepositDate                     = isnull(@DepositDate,papt.DepositDate)
+				,@AmountPaid                      = isnull(@AmountPaid,papt.AmountPaid)
+				,@Reference                       = isnull(@Reference,papt.Reference)
+				,@NameOnCard                      = isnull(@NameOnCard,papt.NameOnCard)
+				,@PaymentCard                     = isnull(@PaymentCard,papt.PaymentCard)
+				,@TransactionID                   = isnull(@TransactionID,papt.TransactionID)
+				,@LastResponseCode                = isnull(@LastResponseCode,papt.LastResponseCode)
+				,@VerifiedTime                    = isnull(@VerifiedTime,papt.VerifiedTime)
+				,@PaymentCancelledTime            = isnull(@PaymentCancelledTime,papt.PaymentCancelledTime)
+				,@ReasonSID                       = isnull(@ReasonSID,papt.ReasonSID)
+				,@PaymentRowGUID                  = isnull(@PaymentRowGUID,papt.PaymentRowGUID)
+				,@IsDeleteEnabled                 = isnull(@IsDeleteEnabled,papt.IsDeleteEnabled)
+				,@RegistrantNo                    = isnull(@RegistrantNo,papt.RegistrantNo)
+				,@DisplayName                     = isnull(@DisplayName,papt.DisplayName)
+				,@TotalApplied                    = isnull(@TotalApplied,papt.TotalApplied)
+			from
+				dbo.vPAPTransaction papt
+			where
+				papt.PAPTransactionSID = @PAPTransactionSID
+
+		end
+
+		-- apply the table-specific pre-update logic (if any)
+
+		--! <PreUpdate>
+		--  insert pre-update logic here ...
+		--! </PreUpdate>
+	
+		-- call the extended version of the procedure (if it exists) for "update.pre" mode
+		
+		if exists
+		(
+			select
+				1
+			from
+				sf.vRoutine r
+			where
+				r.SchemaName = 'ext'
+			and
+				r.RoutineName = 'pPAPTransaction'
+		)
+		begin
+		
+			exec @errorNo = ext.pPAPTransaction
+				 @Mode                            = 'update.pre'
+				,@PAPTransactionSID               = @PAPTransactionSID
+				,@PAPBatchSID                     = @PAPBatchSID output
+				,@PAPSubscriptionSID              = @PAPSubscriptionSID output
+				,@AccountNo                       = @AccountNo output
+				,@InstitutionNo                   = @InstitutionNo output
+				,@TransitNo                       = @TransitNo output
+				,@WithdrawalAmount                = @WithdrawalAmount output
+				,@IsRejected                      = @IsRejected output
+				,@PaymentSID                      = @PaymentSID output
+				,@UserDefinedColumns              = @UserDefinedColumns output
+				,@PAPTransactionXID               = @PAPTransactionXID output
+				,@LegacyKey                       = @LegacyKey output
+				,@UpdateUser                      = @UpdateUser
+				,@RowStamp                        = @RowStamp
+				,@IsReselected                    = @IsReselected
+				,@IsNullApplied                   = @IsNullApplied
+				,@zContext                        = @zContext
+				,@BatchID                         = @BatchID
+				,@BatchSequence                   = @BatchSequence
+				,@WithdrawalDate                  = @WithdrawalDate
+				,@LockedTime                      = @LockedTime
+				,@ProcessedTime                   = @ProcessedTime
+				,@PAPBatchRowGUID                 = @PAPBatchRowGUID
+				,@PAPSubscriptionPersonSID        = @PAPSubscriptionPersonSID
+				,@PAPSubscriptionInstitutionNo    = @PAPSubscriptionInstitutionNo
+				,@PAPSubscriptionTransitNo        = @PAPSubscriptionTransitNo
+				,@PAPSubscriptionAccountNo        = @PAPSubscriptionAccountNo
+				,@PAPSubscriptionWithdrawalAmount = @PAPSubscriptionWithdrawalAmount
+				,@EffectiveTime                   = @EffectiveTime
+				,@PAPSubscriptionCancelledTime    = @PAPSubscriptionCancelledTime
+				,@PAPSubscriptionRowGUID          = @PAPSubscriptionRowGUID
+				,@PaymentPersonSID                = @PaymentPersonSID
+				,@PaymentTypeSID                  = @PaymentTypeSID
+				,@PaymentStatusSID                = @PaymentStatusSID
+				,@GLAccountCode                   = @GLAccountCode
+				,@GLPostingDate                   = @GLPostingDate
+				,@DepositDate                     = @DepositDate
+				,@AmountPaid                      = @AmountPaid
+				,@Reference                       = @Reference
+				,@NameOnCard                      = @NameOnCard
+				,@PaymentCard                     = @PaymentCard
+				,@TransactionID                   = @TransactionID
+				,@LastResponseCode                = @LastResponseCode
+				,@VerifiedTime                    = @VerifiedTime
+				,@PaymentCancelledTime            = @PaymentCancelledTime
+				,@ReasonSID                       = @ReasonSID
+				,@PaymentRowGUID                  = @PaymentRowGUID
+				,@IsDeleteEnabled                 = @IsDeleteEnabled
+				,@RegistrantNo                    = @RegistrantNo
+				,@DisplayName                     = @DisplayName
+				,@TotalApplied                    = @TotalApplied
+		
+		end
+
+		-- update the record
+
+		update
+			dbo.PAPTransaction
+		set
+			 PAPBatchSID = @PAPBatchSID
+			,PAPSubscriptionSID = @PAPSubscriptionSID
+			,AccountNo = @AccountNo
+			,InstitutionNo = @InstitutionNo
+			,TransitNo = @TransitNo
+			,WithdrawalAmount = @WithdrawalAmount
+			,IsRejected = @IsRejected
+			,PaymentSID = @PaymentSID
+			,UserDefinedColumns = @UserDefinedColumns
+			,PAPTransactionXID = @PAPTransactionXID
+			,LegacyKey = @LegacyKey
+			,UpdateUser = @UpdateUser
+			,UpdateTime = sysdatetimeoffset()
+		where
+			PAPTransactionSID = @PAPTransactionSID
+			and
+			RowStamp = isnull(@RowStamp, RowStamp)
+
+		set @rowsAffected = @@rowcount
+
+		-- check for errors
+
+		if @rowsAffected = 0
+		begin
+			
+			if exists (select 1 from dbo.PAPTransaction where PAPTransactionSID = @pAPTransactionSID)
+			begin
+				
+				exec sf.pMessage#Get
+					 @MessageSCD  = 'UpdateBlocked'
+					,@MessageText = @errorText output
+					,@DefaultText = N'A change was made to the "%1" record since it was last retrieved. The overwrite was avoided. Refresh the record and try again.'
+					,@Arg1        = 'dbo.PAPTransaction'
+				
+				raiserror(@errorText, 16, 1)
+			end
+			else
+			begin
+				
+				exec sf.pMessage#Get
+					 @MessageSCD  = 'RecordNotFound'
+					,@MessageText = @errorText output
+					,@DefaultText = N'The %1 record was not found. Record ID = "%2". The record may have been deleted or the identifier is invalid.'
+					,@Arg1        = 'dbo.PAPTransaction'
+					,@Arg2        = @pAPTransactionSID
+				
+				raiserror(@errorText, 18, 1)
+			end
+
+		end
+		else if @rowsAffected <> 1
+		begin
+
+			exec sf.pMessage#Get
+				 @MessageSCD  = 'RowCountUnexpected'
+				,@MessageText = @errorText output
+				,@DefaultText = N'The %1 operation on table "%2" affected an unexpected number of rows (%3). Record ID = %4.'
+				,@Arg1        = 'update'
+				,@Arg2        = 'dbo.PAPTransaction'
+				,@Arg3        = @rowsAffected
+				,@Arg4        = @pAPTransactionSID
+			
+			raiserror(@errorText, 18, 1)
+		end
+
+		-- apply the table-specific post-update logic (if any)
+
+		--! <PostUpdate>
+		--  insert post-update logic here ...
+		--! </PostUpdate>
+	
+		-- call the extended version of the procedure for update.post - if it exists
+		
+		if exists
+		(
+			select
+				1
+			from
+				sf.vRoutine r
+			where
+				r.SchemaName = 'ext'
+			and
+				r.RoutineName = 'pPAPTransaction'
+		)
+		begin
+		
+			exec @errorNo = ext.pPAPTransaction
+				 @Mode                            = 'update.post'
+				,@PAPTransactionSID               = @PAPTransactionSID
+				,@PAPBatchSID                     = @PAPBatchSID
+				,@PAPSubscriptionSID              = @PAPSubscriptionSID
+				,@AccountNo                       = @AccountNo
+				,@InstitutionNo                   = @InstitutionNo
+				,@TransitNo                       = @TransitNo
+				,@WithdrawalAmount                = @WithdrawalAmount
+				,@IsRejected                      = @IsRejected
+				,@PaymentSID                      = @PaymentSID
+				,@UserDefinedColumns              = @UserDefinedColumns
+				,@PAPTransactionXID               = @PAPTransactionXID
+				,@LegacyKey                       = @LegacyKey
+				,@UpdateUser                      = @UpdateUser
+				,@RowStamp                        = @RowStamp
+				,@IsReselected                    = @IsReselected
+				,@IsNullApplied                   = @IsNullApplied
+				,@zContext                        = @zContext
+				,@BatchID                         = @BatchID
+				,@BatchSequence                   = @BatchSequence
+				,@WithdrawalDate                  = @WithdrawalDate
+				,@LockedTime                      = @LockedTime
+				,@ProcessedTime                   = @ProcessedTime
+				,@PAPBatchRowGUID                 = @PAPBatchRowGUID
+				,@PAPSubscriptionPersonSID        = @PAPSubscriptionPersonSID
+				,@PAPSubscriptionInstitutionNo    = @PAPSubscriptionInstitutionNo
+				,@PAPSubscriptionTransitNo        = @PAPSubscriptionTransitNo
+				,@PAPSubscriptionAccountNo        = @PAPSubscriptionAccountNo
+				,@PAPSubscriptionWithdrawalAmount = @PAPSubscriptionWithdrawalAmount
+				,@EffectiveTime                   = @EffectiveTime
+				,@PAPSubscriptionCancelledTime    = @PAPSubscriptionCancelledTime
+				,@PAPSubscriptionRowGUID          = @PAPSubscriptionRowGUID
+				,@PaymentPersonSID                = @PaymentPersonSID
+				,@PaymentTypeSID                  = @PaymentTypeSID
+				,@PaymentStatusSID                = @PaymentStatusSID
+				,@GLAccountCode                   = @GLAccountCode
+				,@GLPostingDate                   = @GLPostingDate
+				,@DepositDate                     = @DepositDate
+				,@AmountPaid                      = @AmountPaid
+				,@Reference                       = @Reference
+				,@NameOnCard                      = @NameOnCard
+				,@PaymentCard                     = @PaymentCard
+				,@TransactionID                   = @TransactionID
+				,@LastResponseCode                = @LastResponseCode
+				,@VerifiedTime                    = @VerifiedTime
+				,@PaymentCancelledTime            = @PaymentCancelledTime
+				,@ReasonSID                       = @ReasonSID
+				,@PaymentRowGUID                  = @PaymentRowGUID
+				,@IsDeleteEnabled                 = @IsDeleteEnabled
+				,@RegistrantNo                    = @RegistrantNo
+				,@DisplayName                     = @DisplayName
+				,@TotalApplied                    = @TotalApplied
+		
+		end
+
+		if @trancount = 0 and xact_state() = 1 commit transaction
+
+		-- return all columns for entity (1), just the PK value (2), or no returned value (0)
+
+		if @IsReselected = 2
+		begin
+
+			select
+				 ent.PAPTransactionSID
+			from
+				dbo.vPAPTransaction ent
+			where
+				ent.PAPTransactionSID = @PAPTransactionSID
+
+		end
+		else if @IsReselected = 1
+		begin
+
+			select
+				 ent.PAPTransactionSID
+				,ent.PAPBatchSID
+				,ent.PAPSubscriptionSID
+				,ent.AccountNo
+				,ent.InstitutionNo
+				,ent.TransitNo
+				,ent.WithdrawalAmount
+				,ent.IsRejected
+				,ent.PaymentSID
+				,ent.UserDefinedColumns
+				,ent.PAPTransactionXID
+				,ent.LegacyKey
+				,ent.IsDeleted
+				,ent.CreateUser
+				,ent.CreateTime
+				,ent.UpdateUser
+				,ent.UpdateTime
+				,ent.RowGUID
+				,ent.RowStamp
+				,ent.BatchID
+				,ent.BatchSequence
+				,ent.WithdrawalDate
+				,ent.LockedTime
+				,ent.ProcessedTime
+				,ent.PAPBatchRowGUID
+				,ent.PAPSubscriptionPersonSID
+				,ent.PAPSubscriptionInstitutionNo
+				,ent.PAPSubscriptionTransitNo
+				,ent.PAPSubscriptionAccountNo
+				,ent.PAPSubscriptionWithdrawalAmount
+				,ent.EffectiveTime
+				,ent.PAPSubscriptionCancelledTime
+				,ent.PAPSubscriptionRowGUID
+				,ent.PaymentPersonSID
+				,ent.PaymentTypeSID
+				,ent.PaymentStatusSID
+				,ent.GLAccountCode
+				,ent.GLPostingDate
+				,ent.DepositDate
+				,ent.AmountPaid
+				,ent.Reference
+				,ent.NameOnCard
+				,ent.PaymentCard
+				,ent.TransactionID
+				,ent.LastResponseCode
+				,ent.VerifiedTime
+				,ent.PaymentCancelledTime
+				,ent.ReasonSID
+				,ent.PaymentRowGUID
+				,ent.IsDeleteEnabled
+				,ent.IsReselected
+				,ent.IsNullApplied
+				,ent.zContext
+				,ent.RegistrantNo
+				,ent.DisplayName
+				,ent.TotalApplied
+			from
+				dbo.vPAPTransaction ent
+			where
+				ent.PAPTransactionSID = @PAPTransactionSID
+
+		end
+
+	end try
+
+	begin catch
+		set @xState = xact_state()
+		
+		if @tranCount > 0 and @xState = 1
+		begin
+			rollback transaction @sprocName																			-- committable wrapping trx exists: rollback to savepoint
+		end
+		else if @xState <> 0																									-- full rollback
+		begin
+			rollback
+		end
+		
+		exec @errorNo = sf.pErrorRethrow																			-- process message text and re-throw the error
+	end catch
+
+	return(@errorNo)
+
+end
+GO
