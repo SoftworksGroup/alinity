@@ -547,7 +547,7 @@ begin
 	begin
 		set @errorMessageSCD = 'MBR.RequiredWhen.InsuranceOrgSID';
 		set @columnNames = N'InsurancePolicyNo, InsuranceOrgSID';
-		set @defaultMessageText = N'A(n) % must be provided when a(n) %2 is filled in.';
+		set @defaultMessageText = N'A(n) %1 must be provided when a(n) %2 is filled in.';
 		set @arg1 = N'Insurance Provider Name';
 		set @arg2 = N'Policy#';
 	end;
@@ -558,7 +558,7 @@ begin
 	begin
 		set @errorMessageSCD = 'MBR.RequiredWhen.InsurancePolicyNo';
 		set @columnNames = N'InsurancePolicyNo, InsuranceOrgSID';
-		set @defaultMessageText = N'A(n) % must be provided when a(n) %2 is filled in.';
+		set @defaultMessageText = N'A(n) %1 must be provided when a(n) %2 is filled in.';
 		set @arg1 = N'Policy#';
 		set @arg2 = N'Insurance Provider Name';
 	end

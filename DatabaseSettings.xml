@@ -1,8 +1,7 @@
 <DatabaseSettings>
-  <Collation>
-  </Collation>
+  <Collation>SQL_Latin1_General_CP1_CI_AS</Collation>
   <ServerVersion>Sql2014</ServerVersion>
   <ServerName>ca1sgistgdb01\stgdb01</ServerName>
   <DatabaseName>devV6</DatabaseName>
-  <DatabaseInformation Version="1" />
+  <DatabaseInformation Version="2" />
 </DatabaseSettings>
